@@ -1,0 +1,97 @@
+
+body {
+    font-family: Arial, sans-serif;
+    background: #f2f4f8;
+    margin: 0;
+    padding: 40px 20px;
+}
+
+.container {
+    max-width: 500px;
+    margin: 30px auto;
+    background: white;
+    padding: 35px;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.12);
+}
+
+h2 {
+    text-align: center;
+    color: #222;
+    margin-bottom: 30px;
+}
+
+label {
+    display: block;
+    margin-top: 15px;
+    margin-bottom: 8px;
+    font-weight: bold;
+    color: #333;
+}
+
+input {
+    width: 100%;
+    padding: 14px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    box-sizing: border-box;
+    font-size: 15px;
+}
+
+input:focus {
+    outline: none;
+    border-color: #0d6efd;
+}
+
+button {
+    width: 100%;
+    padding: 14px;
+    margin-top: 25px;
+    border: none;
+    border-radius: 6px;
+    color: white;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.deposit-btn {
+    background: #198754;
+}
+
+.deposit-btn:hover {
+    background: #146c43;
+}
+
+.withdraw-btn {
+    background: #dc3545;
+}
+
+.withdraw-btn:hover {
+    background: #bb2d3b;
+}
+
+.success {
+    color: green;
+    background: #d1e7dd;
+    padding: 12px;
+    border-radius: 6px;
+}
+
+.error {
+    color: red;
+    background: #f8d7da;
+    padding: 12px;
+    border-radius: 6px;
+}
+
+a {
+    display: inline-block;
+    margin-top: 20px;
+    color: #0d6efd;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}

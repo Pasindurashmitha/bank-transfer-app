@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @RestController
@@ -20,6 +21,7 @@ public class BankController {
 
     private final BankService bankService;
 
+    // Constructor injection
     public BankController(BankService bankService) {
         this.bankService = bankService;
     }
@@ -27,7 +29,6 @@ public class BankController {
     // 1. Get all customers
     @GetMapping("/customers")
     public ResponseEntity<List<Customer>> getAllCustomers() {
-
         return ResponseEntity.ok(bankService.getAllCustomers());
     }
 
@@ -52,13 +53,35 @@ public class BankController {
                 request.isSimulateSystemFailure()
         );
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(transaction);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(transaction);
     }
 
     // 4. Get all transactions
     @GetMapping("/transactions")
     public ResponseEntity<List<BankTransaction>> getAllTransactions() {
-
         return ResponseEntity.ok(bankService.getAllTransactions());
+    }
+
+    // 5. TASK 12.1: Get large successful transfers
+    @GetMapping("/large-transfers")
+    public ResponseEntity<List<BankTransaction>> getLargeTransfers(
+            @RequestParam(defaultValue = "10000") BigDecimal min) {
+
+        List<BankTransaction> transactions =
+                bankService.getLargeTransfers(min);
+
+        return ResponseEntity.ok(transactions);
+    }
+
+    // 6. TASK 12.2: Get total successful amount sent by a customer
+    @GetMapping("/customers/{customerId}/total-sent")
+    public ResponseEntity<BigDecimal> getTotalAmountSent(
+            @PathVariable Long customerId) {
+
+        BigDecimal totalAmount =
+                bankService.getTotalAmountSent(customerId);
+
+        return ResponseEntity.ok(totalAmount);
     }
 }

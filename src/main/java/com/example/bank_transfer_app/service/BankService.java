@@ -12,6 +12,9 @@ import com.example.bank_transfer_app.repository.CustomerRepository;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -24,123 +27,122 @@ public class BankService {
     private final CustomerRepository customerRepository;
     private final BankTransactionRepository transactionRepository;
     private final TransactionAuditService auditService;
+    private final TransactionTemplate transactionTemplate;
 
     // Constructor injection
     public BankService(
             CustomerRepository customerRepository,
             BankTransactionRepository transactionRepository,
-            TransactionAuditService auditService) {
+            TransactionAuditService auditService,
+            PlatformTransactionManager transactionManager) {
 
         this.customerRepository = customerRepository;
         this.transactionRepository = transactionRepository;
         this.auditService = auditService;
+
+        this.transactionTemplate =
+                new TransactionTemplate(transactionManager);
+
+        this.transactionTemplate.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_REQUIRED);
     }
 
-    // TASK 10: Restore transaction management
-    @Transactional(rollbackFor = Exception.class)
+    // TASK 10: Transfer money with rollback and failed transaction audit
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
     public BankTransaction transfer(
             String senderAccountNumber,
             String receiverAccountNumber,
             BigDecimal amount,
             boolean simulateSystemFailure) {
 
-        Long senderId = null;
-        Long receiverId = null;
+        // Store customer IDs for failed transaction audit
+        Long[] customerIds = new Long[2];
 
         try {
 
-            // Validate transfer amount
-            if (amount == null ||
-                    amount.compareTo(BigDecimal.ZERO) <= 0) {
+            // Execute transfer inside a separate transaction
+            return transactionTemplate.execute(status -> {
 
-                throw new InvalidTransferException(
-                        "Transfer amount must be greater than zero");
-            }
+                if (amount == null ||
+                        amount.compareTo(BigDecimal.ZERO) <= 0) {
 
-            // Find sender
-            Customer sender = customerRepository
-                    .findByAccountNumber(senderAccountNumber)
-                    .orElseThrow(() -> new CustomerNotFoundException(
-                            "Sender account not found"));
+                    throw new InvalidTransferException(
+                            "Transfer amount must be greater than zero");
+                }
 
-            senderId = sender.getId();
+                Customer sender = customerRepository
+                        .findByAccountNumber(senderAccountNumber)
+                        .orElseThrow(() -> new CustomerNotFoundException(
+                                "Sender account not found"));
 
-            // Find receiver
-            Customer receiver = customerRepository
-                    .findByAccountNumber(receiverAccountNumber)
-                    .orElseThrow(() -> new CustomerNotFoundException(
-                            "Receiver account not found"));
+                customerIds[0] = sender.getId();
 
-            receiverId = receiver.getId();
+                Customer receiver = customerRepository
+                        .findByAccountNumber(receiverAccountNumber)
+                        .orElseThrow(() -> new CustomerNotFoundException(
+                                "Receiver account not found"));
 
-            // Prevent same account transfer
-            if (sender.getId().equals(receiver.getId())) {
+                customerIds[1] = receiver.getId();
 
-                throw new InvalidTransferException(
-                        "Cannot transfer money to the same account");
-            }
+                if (sender.getId().equals(receiver.getId())) {
+                    throw new InvalidTransferException(
+                            "Cannot transfer money to the same account");
+                }
 
-            // Check sender balance
-            if (sender.getBalance().compareTo(amount) < 0) {
+                if (sender.getBalance().compareTo(amount) < 0) {
+                    throw new InsufficientBalanceException(
+                            "Insufficient balance in sender account");
+                }
 
-                throw new InsufficientBalanceException(
-                        "Insufficient balance in sender account");
-            }
+                int debitResult = customerRepository.debitBalance(
+                        senderAccountNumber, amount);
 
-            // Debit sender account
-            int debitResult = customerRepository.debitBalance(
-                    senderAccountNumber, amount);
+                if (debitResult == 0) {
+                    throw new InsufficientBalanceException(
+                            "Unable to debit sender account");
+                }
 
-            if (debitResult == 0) {
+                // Simulate failure after debit for Task 10
+                if (simulateSystemFailure) {
+                    throw new RuntimeException(
+                            "Simulated system failure after debit!");
+                }
 
-                throw new InsufficientBalanceException(
-                        "Unable to debit sender account");
-            }
+                int creditResult = customerRepository.creditBalance(
+                        receiverAccountNumber, amount);
 
-            // TASK 10: Simulate system failure after debit
-            if (simulateSystemFailure) {
+                if (creditResult == 0) {
+                    throw new CustomerNotFoundException(
+                            "Unable to credit receiver account");
+                }
 
-                throw new RuntimeException(
-                        "Simulated system failure after debit!");
-            }
+                // Create successful transaction
+                BankTransaction transaction = new BankTransaction();
 
-            // Credit receiver account
-            int creditResult = customerRepository.creditBalance(
-                    receiverAccountNumber, amount);
+                transaction.setSender(sender);
+                transaction.setReceiver(receiver);
+                transaction.setAmount(amount);
+                transaction.setStatus(TransactionStatus.SUCCESS);
+                transaction.setTransactionDate(LocalDateTime.now());
 
-            if (creditResult == 0) {
-
-                throw new CustomerNotFoundException(
-                        "Unable to credit receiver account");
-            }
-
-            // Create successful transaction
-            BankTransaction transaction = new BankTransaction();
-
-            transaction.setSender(sender);
-            transaction.setReceiver(receiver);
-            transaction.setAmount(amount);
-            transaction.setStatus(TransactionStatus.SUCCESS);
-            transaction.setTransactionDate(LocalDateTime.now());
-
-            return transactionRepository.save(transaction);
+                return transactionRepository.save(transaction);
+            });
 
         } catch (RuntimeException exception) {
 
-            // Save failed transaction separately
-            // REQUIRES_NEW is handled by TransactionAuditService
-            if (senderId != null && receiverId != null) {
+            // Main transfer transaction has already rolled back here.
+            // Save failed transaction in a separate transaction.
+
+            if (customerIds[0] != null &&
+                    customerIds[1] != null) {
 
                 try {
-
                     auditService.logFailedTransaction(
-                            senderId,
-                            receiverId,
-                            amount
-                    );
+                            customerIds[0],
+                            customerIds[1],
+                            amount);
 
                 } catch (RuntimeException auditException) {
-
                     exception.addSuppressed(auditException);
                 }
             }
@@ -151,14 +153,11 @@ public class BankService {
 
     // Get all customers
     public List<Customer> getAllCustomers() {
-
         return customerRepository.findAll();
     }
 
     // Get customer by account number
-    public Customer getCustomerByAccountNumber(
-            String accountNumber) {
-
+    public Customer getCustomerByAccountNumber(String accountNumber) {
         return customerRepository.findByAccountNumber(accountNumber)
                 .orElseThrow(() -> new CustomerNotFoundException(
                         "Customer account not found"));
@@ -166,7 +165,124 @@ public class BankService {
 
     // Get all transactions
     public List<BankTransaction> getAllTransactions() {
-
         return transactionRepository.findAll();
+    }
+
+    // TASK 12.1: Get large successful transfers
+    public List<BankTransaction> getLargeTransfers(BigDecimal minAmount) {
+
+        if (minAmount == null ||
+                minAmount.compareTo(BigDecimal.ZERO) < 0) {
+
+            throw new IllegalArgumentException(
+                    "Minimum amount cannot be negative or null");
+        }
+
+        return transactionRepository.findLargeTransfers(minAmount);
+    }
+
+    // TASK 12.2: Get total successful amount sent by a customer
+    public BigDecimal getTotalAmountSent(Long customerId) {
+
+        customerRepository.findById(customerId)
+                .orElseThrow(() -> new CustomerNotFoundException(
+                        "Customer not found"));
+
+        return transactionRepository.getTotalAmountSent(customerId);
+    }
+
+    // TASK 12.3: Get or create the system bank account
+    private Customer getSystemBankAccount() {
+
+        return customerRepository.findByAccountNumber("999999")
+                .orElseGet(() -> {
+
+                    Customer bank = new Customer();
+
+                    bank.setAccountNumber("999999");
+                    bank.setName("System Bank");
+                    bank.setEmail("bank@bank.com");
+                    bank.setBalance(BigDecimal.ZERO);
+
+                    return customerRepository.save(bank);
+                });
+    }
+
+    // TASK 12.3: Deposit money
+    @Transactional(rollbackFor = Exception.class)
+    public BankTransaction deposit(
+            String accountNumber,
+            BigDecimal amount) {
+
+        validateTransactionAmount(amount);
+
+        Customer customer = customerRepository
+                .findByAccountNumber(accountNumber)
+                .orElseThrow(() -> new CustomerNotFoundException(
+                        "Customer account not found"));
+
+        Customer bank = getSystemBankAccount();
+
+        int result = customerRepository.creditBalance(
+                accountNumber, amount);
+
+        if (result == 0) {
+            throw new RuntimeException("Deposit failed");
+        }
+
+        BankTransaction transaction = new BankTransaction();
+
+        transaction.setSender(bank);
+        transaction.setReceiver(customer);
+        transaction.setAmount(amount);
+        transaction.setStatus(TransactionStatus.SUCCESS);
+        transaction.setTransactionDate(LocalDateTime.now());
+
+        return transactionRepository.save(transaction);
+    }
+
+    // TASK 12.3: Withdraw money
+    @Transactional(rollbackFor = Exception.class)
+    public BankTransaction withdraw(
+            String accountNumber,
+            BigDecimal amount) {
+
+        validateTransactionAmount(amount);
+
+        Customer customer = customerRepository
+                .findByAccountNumber(accountNumber)
+                .orElseThrow(() -> new CustomerNotFoundException(
+                        "Customer account not found"));
+
+        Customer bank = getSystemBankAccount();
+
+        int result = customerRepository.debitBalance(
+                accountNumber, amount);
+
+        if (result == 0) {
+            throw new InsufficientBalanceException(
+                    "Insufficient balance for withdrawal");
+        }
+
+        BankTransaction transaction = new BankTransaction();
+
+        transaction.setSender(customer);
+        transaction.setReceiver(bank);
+        transaction.setAmount(amount);
+        transaction.setStatus(TransactionStatus.SUCCESS);
+        transaction.setTransactionDate(LocalDateTime.now());
+
+        return transactionRepository.save(transaction);
+    }
+
+    // Validate deposit and withdrawal amounts
+    private void validateTransactionAmount(BigDecimal amount) {
+
+        if (amount == null ||
+                amount.compareTo(BigDecimal.ZERO) <= 0) {
+
+            throw new InvalidTransferException(
+                    "Amount must be greater than zero");
+        }
     }
 }

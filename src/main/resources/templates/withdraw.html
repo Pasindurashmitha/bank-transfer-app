@@ -1,0 +1,87 @@
+
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Withdraw Money | Bank Transfer System</title>
+
+    <!-- External CSS -->
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+
+<body>
+
+    <div class="container">
+
+        <h2>Withdraw Money</h2>
+
+        <!-- Success Message -->
+        <p class="success"
+           th:if="${successMessage}"
+           th:text="${successMessage}">
+        </p>
+
+        <!-- Error Message -->
+        <p class="error"
+           th:if="${errorMessage}"
+           th:text="${errorMessage}">
+        </p>
+
+        <!-- Withdraw Form -->
+        <form th:action="@{/withdraw}"
+              th:object="${transactionForm}"
+              method="post">
+
+            <!-- Account Number -->
+            <label for="accountNumber">
+                Account Number
+            </label>
+
+            <input
+                type="text"
+                id="accountNumber"
+                th:field="*{accountNumber}"
+                placeholder="Enter account number"
+                required
+            >
+
+            <!-- Withdrawal Amount -->
+            <label for="amount">
+                Amount (Rs.)
+            </label>
+
+            <input
+                type="number"
+                id="amount"
+                th:field="*{amount}"
+                placeholder="Enter withdrawal amount"
+                min="0.01"
+                step="0.01"
+                required
+            >
+
+            <!-- Submit Button -->
+            <button type="submit" class="withdraw-btn">
+                Withdraw Money
+            </button>
+
+        </form>
+
+        <!-- Navigation Links -->
+        <a href="/deposit">
+            Go to Deposit Page
+        </a>
+
+        <br>
+
+        <a href="/api/transactions">
+            View Transactions
+        </a>
+
+    </div>
+
+</body>
+</html>
